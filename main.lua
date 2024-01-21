@@ -43,7 +43,7 @@ local function registerModConfig()
 		})
 		end
 
-    local spawnCountLabel = [[Total amount of registered spawns ]] .. (isYagdActive and '(only killed guards counted)' or '(guards not counted)')
+    local spawnCountLabel = [[Total amount of tracked spawns ]] .. (isYagdActive and '(only killed guards counted)' or '(guards not counted)')
     settings:createInfo({
 			text = spawnCountLabel .. ': ' .. getSpawnCount(),
 			postCreate = function(self)
@@ -84,14 +84,15 @@ local function onCreatureSpawn(e)
 	end
 
 	if (tes3.player.data.noRespawns[spawnIndex]) then
-		-- PREVENT SPAWN
+		-- PREVENT RESPAWN
 		return false
 	end
 
 	-- In Yet Another Guard Diversity mod guards are respawned from a leveled list,
 	-- but are not stored in the save file. They are always recreated on game load, 
 	-- which makes it hard to track if they were killed or not.
-	-- Adding them to the list on spawn would make them never spawn again.
+	-- Adding them to the list on spawn event would make them never spawn again,
+	-- (even if we haven't killed them!).
 	-- We can prevent it here and add them to noRespawns table on death event instead.
 	if (isYagdActive and string.find(e.list.id, "guard")) then
 		if debug then
@@ -109,6 +110,10 @@ event.register(tes3.event.leveledCreaturePicked, onCreatureSpawn)
 
 -- Yet Another Guard Diversity patch
 local function deathCallback(e)
+	if (not config.enabled) then
+		return
+	end
+	
 	if (not isYagdActive or not string.find(e.reference.id, "guard") or not e.reference.isLeveledSpawn) then
 		return
 	end
