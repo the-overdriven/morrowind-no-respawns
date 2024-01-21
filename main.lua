@@ -16,21 +16,23 @@ function getSpawnCount()
 end
 
 -- CONFIG
-local configPath = "No Respawns"
+local configPath = 'No Respawns'
 local config = mwse.loadConfig(configPath, {
 		-- default config
-    enabled = true
+    enabled = true,
+    trackExteriors = true,
+    trackGuards = true
 })
 local function registerModConfig()
-    local template = mwse.mcm.createTemplate({ name = "No Respawns" })
+    local template = mwse.mcm.createTemplate({ name = 'No Respawns' })
 
     template:saveOnClose(configPath, config)
 
-    local settings = template:createPage({ label = "Settings" })
+    local settings = template:createPage({ label = 'Settings' })
 
     settings:createYesNoButton({
-        label = "Enable Mod",
-        variable = mwse.mcm:createTableVariable({ id = "enabled", table = config }),
+        label = 'Enable Mod',
+        variable = mwse.mcm:createTableVariable({ id = 'enabled', table = config }),
     })
     
 		settings:createInfo({
@@ -51,6 +53,18 @@ local function registerModConfig()
 			end
 		})
 
+		settings:createYesNoButton({
+      label = [[Track exteriors]],
+      variable = mwse.mcm:createTableVariable({ id = 'trackExteriors', table = config }),
+    })
+
+    if isYagdActive then
+			settings:createYesNoButton({
+    	  label = [[Track guards (everywhere)]],
+    	  variable = mwse.mcm:createTableVariable({ id = 'trackGuards', table = config }),
+    	})
+		end
+
     template:register()
 end
 event.register(tes3.event.modConfigReady, registerModConfig)
@@ -61,13 +75,20 @@ local function onCreatureSpawn(e)
 		return
 	end
 
+	if (e.cell.isOrBehavesAsExterior and not config.trackExteriors and not string.find(e.list.id, 'guard')) then
+		if debug then
+			mwse.log('[No Respawns] exterior cell detected while trackExteriors is disabled, do not track')
+		end
+		return
+	end
+
 	if (not tes3.player.data.noRespawns) then
 		tes3.player.data.noRespawns = {}
 		mwse.log('[No Respawns] created tes3.player.data.noRespawns for the first time')
 	end
 
 	-- We only care about leveled creatures that come from a placed leveled creature reference.
-	if (e.source ~= "reference") then
+	if (e.source ~= 'reference') then
 		return
 	end
 
@@ -94,7 +115,7 @@ local function onCreatureSpawn(e)
 	-- Adding them to the list on spawn event would make them never spawn again,
 	-- (even if we haven't killed them!).
 	-- We can prevent it here and add them to noRespawns table on death event instead.
-	if (isYagdActive and string.find(e.list.id, "guard")) then
+	if (isYagdActive and string.find(e.list.id, 'guard')) then
 		if debug then
 			mwse.log('[No Respawns] guard detected, do NOT add to noRespawns list')
 		end
@@ -113,8 +134,15 @@ local function deathCallback(e)
 	if (not config.enabled) then
 		return
 	end
-	
-	if (not isYagdActive or not string.find(e.reference.id, "guard") or not e.reference.isLeveledSpawn) then
+
+	if (not config.trackGuards) then
+		if debug then
+			mwse.log('[No Respawns] trackGuards option disabled, do not track')
+		end
+		return
+	end
+
+	if (not isYagdActive or not string.find(e.reference.id, 'guard') or not e.reference.isLeveledSpawn) then
 		return
 	end
 
