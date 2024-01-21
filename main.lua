@@ -2,14 +2,18 @@ local debug = false
 local isYagdActive = tes3.isModActive('Yet Another Guard Diversity - Regular.ESP')
 
 function tableLength(T)
-  local count = 0
-  for _ in pairs(T) do count = count + 1 end
-  return count
+	local count = 0
+	for _ in pairs(T) do count = count + 1 end
+	return count
 end
 
 function getSpawnCount()
 	if not tes3.player then
-		return 'no data'
+		return '(load the game first)'
+	end
+
+	if not tes3.player.data.noRespawns then
+		return '0'
 	end
 
 	return tableLength(tes3.player.data.noRespawns)
@@ -19,53 +23,53 @@ end
 local configPath = 'No Respawns'
 local config = mwse.loadConfig(configPath, {
 		-- default config
-    enabled = true,
-    trackExteriors = true,
-    trackGuards = true
-})
+		enabled = true,
+		trackExteriors = true,
+		trackGuards = true
+	})
 local function registerModConfig()
-    local template = mwse.mcm.createTemplate({ name = 'No Respawns' })
+	local template = mwse.mcm.createTemplate({ name = 'No Respawns' })
 
-    template:saveOnClose(configPath, config)
+	template:saveOnClose(configPath, config)
 
-    local settings = template:createPage({ label = 'Settings' })
+	local settings = template:createPage({ label = 'Settings' })
 
-    settings:createYesNoButton({
-        label = 'Enable Mod',
-        variable = mwse.mcm:createTableVariable({ id = 'enabled', table = config }),
-    })
-    
-		settings:createInfo({
-			text = [[Is Yet Another Guard Diversity mod active? ]] .. (isYagdActive and 'yes' or 'no'),
-		})
+	settings:createYesNoButton({
+		label = 'Enable Mod',
+		variable = mwse.mcm:createTableVariable({ id = 'enabled', table = config }),
+	})
 
-		if not isYagdActive then
+	settings:createInfo({
+		text = [[Is Yet Another Guard Diversity mod active? ]] .. (isYagdActive and 'yes' or 'no'),
+	})
+
+	if not isYagdActive then
 		settings:createInfo({
 			text = [[Install Yet Another Guard Diversity mod to start tracking killed guards.]],
 		})
+	end
+
+	local spawnCountLabel = [[Total amount of tracked spawns ]] .. (isYagdActive and '(includes only killed guards)' or '(guards not counted)')
+	settings:createInfo({
+		text = spawnCountLabel .. ': ' .. getSpawnCount(),
+		postCreate = function(self)
+			self.elements.info.text = spawnCountLabel .. ': ' .. getSpawnCount()
 		end
+	})
 
-    local spawnCountLabel = [[Total amount of tracked spawns ]] .. (isYagdActive and '(only killed guards counted)' or '(guards not counted)')
-    settings:createInfo({
-			text = spawnCountLabel .. ': ' .. getSpawnCount(),
-			postCreate = function(self)
-				self.elements.info.text = spawnCountLabel .. ': ' .. getSpawnCount()
-			end
-		})
+	settings:createYesNoButton({
+		label = [[Track exteriors]],
+		variable = mwse.mcm:createTableVariable({ id = 'trackExteriors', table = config }),
+	})
 
+	if isYagdActive then
 		settings:createYesNoButton({
-      label = [[Track exteriors]],
-      variable = mwse.mcm:createTableVariable({ id = 'trackExteriors', table = config }),
-    })
+			label = [[Track guards (everywhere)]],
+			variable = mwse.mcm:createTableVariable({ id = 'trackGuards', table = config }),
+		})
+	end
 
-    if isYagdActive then
-			settings:createYesNoButton({
-    	  label = [[Track guards (everywhere)]],
-    	  variable = mwse.mcm:createTableVariable({ id = 'trackGuards', table = config }),
-    	})
-		end
-
-    template:register()
+	template:register()
 end
 event.register(tes3.event.modConfigReady, registerModConfig)
 
@@ -91,8 +95,7 @@ local function onCreatureSpawn(e)
 	if (e.source ~= 'reference') then
 		return
 	end
-
-	local spawnerData = e.spawner.data
+	
 	local spawnIndex = e.cell.id .. '_' .. tostring(e.spawner.position)
 
 	if debug then
@@ -112,7 +115,7 @@ local function onCreatureSpawn(e)
 	-- In Yet Another Guard Diversity mod guards are respawned from a leveled list,
 	-- but are not stored in the save file. They are always recreated on game load, 
 	-- which makes it hard to track if they were killed or not.
-	-- Adding them to the list on spawn event would make them never spawn again,
+	-- Adding them to the list on spawn event would make them never spawn again
 	-- (even if we haven't killed them!).
 	-- We can prevent it here and add them to noRespawns table on death event instead.
 	if (isYagdActive and string.find(e.list.id, 'guard')) then
