@@ -1,4 +1,4 @@
-local debug = false
+local debug = true
 local isYagdActive = tes3.isModActive('Yet Another Guard Diversity - Regular.ESP')
 
 function tableLength(T)
@@ -24,8 +24,12 @@ local configPath = 'No Respawns'
 local config = mwse.loadConfig(configPath, {
     -- default config
     enabled = true,
+    removePermanently = false,
     trackExteriors = true,
-    trackGuards = true
+    trackGuards = true,
+    spawnHighLvl = false,
+    spawnChance = 1,
+    spawnChanceHighLvlOnly = true
   })
 local function registerModConfig()
   local template = mwse.mcm.createTemplate({ name = 'No Respawns' })
@@ -37,6 +41,11 @@ local function registerModConfig()
   settings:createYesNoButton({
     label = 'Enable Mod',
     variable = mwse.mcm:createTableVariable({ id = 'enabled', table = config }),
+  })
+
+  settings:createYesNoButton({
+    label = [[Remove spawns permanently (WARNING: spawns will remain deleted in this playthrough, even after disabling mod)]],
+    variable = mwse.mcm:createTableVariable({ id = 'removePermanently', table = config }),
   })
 
   settings:createInfo({
@@ -69,12 +78,35 @@ local function registerModConfig()
     })
   end
 
+  settings:createYesNoButton({
+    label = [[Spawn high lvl creatures (ignore level list requirements)]],
+    variable = mwse.mcm:createTableVariable({ id = 'spawnHighLvl', table = config }),
+  })
+
+  settings:createDecimalSlider({
+    label = [[Spawn chance (determines random chance of all spawns to happen, 1 = default/always, 0 = never)]],
+    min = 0,
+    max = 1,
+    step = 0.01,
+    jump = 0.1,
+    decimalPlaces = 2,
+    variable = mwse.mcm.createTableVariable({ id = "spawnChance", table = config }),
+  })
+
+  settings:createYesNoButton({
+    label = [[Apply random spawn chance only to high lvl creatures]],
+    variable = mwse.mcm:createTableVariable({ id = 'spawnChanceHighLvlOnly', table = config }),
+  })
+
   template:register()
 end
 event.register(tes3.event.modConfigReady, registerModConfig)
 
 --- @param e leveledCreaturePickedEventData
 local function onCreatureSpawn(e)
+	-- We do it even if e.pick is nil (if no creature spawned, due to lvl requirement or chanceForNothing)
+  -- this intentionally prevents new spawns when revisiting cells after time, with higher lvl
+
   if (not config.enabled) then
     return
   end
@@ -84,6 +116,15 @@ local function onCreatureSpawn(e)
       mwse.log('[No Respawns] exterior cell detected while trackExteriors is disabled, do not track')
     end
     return
+  end
+
+  local isHighLvlSpawn = e.list.list[1].levelRequired > tes3.player.object.level
+
+  if config.spawnHighLvl and isHighLvlSpawn then
+  	if debug then
+  		mwse.log('[No Respawns] is high lvl spawn, spawn %s', e.list.list[1].object)
+  	end
+  	e.pick = e.list.list[1].object
   end
 
   if (not tes3.player.data.noRespawns) then
@@ -101,10 +142,11 @@ local function onCreatureSpawn(e)
   if debug then
     mwse.log('[No Respawns] ')
     mwse.log('[No Respawns] cell id: %s', e.cell.id)
+    mwse.log('[No Respawns] e.spawner.position: %s', e.spawner.position)
     mwse.log('[No Respawns] list: %s', e.list)
+    mwse.log('[No Respawns] required level: %s', e.list.list[1].levelRequired)
     mwse.log('[No Respawns] picked creature: %s', e.pick)
     mwse.log('[No Respawns] has spawned before (tes3.player.data.noRespawns[spawnIndex])? %s', tes3.player.data.noRespawns[spawnIndex])
-    mwse.log('[No Respawns] e.spawner.position: %s', e.spawner.position)
   end
 
   if (tes3.player.data.noRespawns[spawnIndex]) then
@@ -125,9 +167,40 @@ local function onCreatureSpawn(e)
     return
   end
 
-  -- We set it even if e.pick is nil (if no creature spawned, due to lvl requirement or chanceForNothing)
-  -- this intentionally prevents new spawns when revisiting cells after time, with higher lvl
-  tes3.player.data.noRespawns[spawnIndex] = true
+  -- SPAWN CHANCE (optional)
+  -- especially fun with spawnHighLvl option, as it will make spawns unpredictable and diverse in difficulty
+  if ((config.spawnChance < 1)) then
+  	if (config.spawnChanceHighLvlOnly and not isHighLvlSpawn) then
+  		-- required level of the leveled list must be higher than player's level to randomly prevent spawn
+  		return
+  	end
+
+    if (math.random(1, 100) > (config.spawnChance * 100)) then
+      -- i.e. rolled 80 when spawn chance is 70% means spawn is prevented
+      -- 0% spawn chance prevents all spawns
+      if debug then
+    		mwse.log('[No Respawns] spawnChance prevented spawn')
+  		end
+
+			timer.start({ duration = math.random(0.44, 0.55), callback = function()
+      	-- TODO: delayed jump scare spawn?
+			end})
+
+      return false
+    end
+  end
+
+  if config.removePermanently then
+  	-- more nuclear solution:
+  	-- removes spawn permanently to spare CPU and save file size 
+  	-- (will even prevent triggering this whole event on next re-visit)
+		timer.start({ duration = 1, callback = function()
+			e.spawner:delete()
+		end})
+	else
+		-- track spawn
+  	tes3.player.data.noRespawns[spawnIndex] = true
+	end
 end
 event.register(tes3.event.leveledCreaturePicked, onCreatureSpawn)
 
